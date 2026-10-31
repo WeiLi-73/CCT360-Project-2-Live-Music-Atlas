@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#100e18" />
+    <title>Encore Atlas | Live Music, Worldwide</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Cormorant+Garamond:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/globe.gl"></script>
+    <script src="script.js" defer></script>
+  </head>
+  <body data-genre="default">
+    <div class="site-shell">
+      <header class="topbar">
+        <a class="wordmark" href="#top" aria-label="Encore Atlas home"><span class="wordmark-mark">E</span><span>ENCORE<br /><small>ATLAS</small></span></a>
+        <div class="topbar-center"><span class="live-dot"></span><span>THE WORLD IS ON STAGE</span></div>
+        <button class="sound-toggle" id="sound-toggle" type="button" aria-pressed="true"><span class="sound-icon">♫</span><span>Sound on</span></button>
+      </header>
+
+      <main id="top">
+        <section class="intro" aria-labelledby="page-title">
+          <p class="eyebrow"><span>LIVE MUSIC</span><span class="eyebrow-rule"></span><span>WORLDWIDE</span></p>
+          <h1 id="page-title">Find your<br /><em>next live moment.</em></h1>
+          <p class="intro-copy">A living map of artists, stages, and nights worth remembering.</p>
+          <div class="search-row">
+            <label class="search-box"><span aria-hidden="true">⌕</span><input id="artist-search" type="search" placeholder="Search an artist or city" autocomplete="off" /></label>
+            <label class="select-wrap"><span class="sr-only">Filter by genre</span><select id="genre-filter"><option value="all">All sounds</option><option value="Pop">Pop</option><option value="Rock">Rock</option><option value="Electronic">Electronic</option><option value="Indie">Indie</option></select><span aria-hidden="true">⌄</span></label>
+          </div>
+          <p class="micro-note"><span class="micro-star">✳</span> Move the globe. Follow a light. Find your people.</p>
+        </section>
+
+        <section class="globe-stage" aria-label="Interactive globe of live music events">
+          <div class="stage-halo"></div>
+          <div id="globe" role="img" aria-label="Interactive 3D globe showing concert locations"></div>
+          <div class="globe-topline"><span class="data-label"><i></i> <span id="data-mode">DEMO DATA</span></span><span id="updated-label">UPCOMING SHOWS</span></div>
+          <div class="globe-caption"><span class="caption-line"></span><span>ROTATE TO EXPLORE</span><span class="caption-line"></span></div>
+          <div class="globe-count"><span class="count-number" id="event-count">06</span><span>SHOWS<br />ON THE MAP</span></div>
+          <button class="reset-view" id="reset-view" type="button" aria-label="Reset globe view">↻ <span>RESET VIEW</span></button>
+          <div class="genre-legend" aria-label="Music genre colors"><span><i class="legend-pop"></i>Pop</span><span><i class="legend-rock"></i>Rock</span><span><i class="legend-electronic"></i>Electronic</span><span><i class="legend-indie"></i>Indie</span></div>
+        </section>
+
+        <section class="below-fold" aria-label="How to explore">
+          <span>01 / ROTATE</span><p>Move across the globe and discover where music is happening.</p>
+          <span>02 / OPEN A LIGHT</span><p>Choose a show to step into that artist’s visual world.</p>
+        </section>
+      </main>
+
+      <aside class="artist-panel" id="artist-panel" aria-hidden="true" aria-labelledby="panel-artist">
+        <button class="panel-close" id="panel-close" type="button" aria-label="Close artist details">×</button>
+        <div class="panel-kicker"><span class="panel-kicker-dot"></span><span id="panel-kicker-text">A SIGNAL FROM THE STAGE</span></div>
+        <p class="panel-genre" id="panel-genre">LIVE / POP</p>
+        <h2 id="panel-artist">Artist name</h2>
+        <p class="panel-tagline" id="panel-tagline">A night waiting to happen.</p>
+        <div class="panel-art" id="panel-art"><span class="art-orbit orbit-one"></span><span class="art-orbit orbit-two"></span><span class="art-star">✳</span><span class="art-word" id="art-word">LIVE<br />TONIGHT</span><span class="art-stamp">ENCORE<br />ATLAS</span></div>
+        <div class="show-details">
+          <div><span class="detail-label">DATE</span><strong id="panel-date">Date</strong></div>
+          <div><span class="detail-label">VENUE</span><strong id="panel-venue">Venue</strong></div>
+          <div><span class="detail-label">CITY</span><strong id="panel-city">City</strong></div>
+        </div>
+        <div class="panel-clue"><span class="clue-symbol">✦</span><div><span class="detail-label">YOUR CLUE</span><p id="panel-clue-text">Every great night starts somewhere.</p></div></div>
+        <a class="ticket-link" id="ticket-link" href="#" target="_blank" rel="noreferrer">EXPLORE THIS SHOW <span>↗</span></a>
+      </aside>
+      <button class="panel-scrim" id="panel-scrim" type="button" aria-label="Close artist details"></button>
+
+      <footer class="footer"><span>ENCORE ATLAS © 2026</span><span>MADE FOR THE NIGHTS THAT STAY WITH YOU</span><span>DATA PREVIEW · DEMO CONTENT</span></footer>
+    </div>
+  </body>
+</html>

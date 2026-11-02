@@ -8,7 +8,29 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Cormorant+Garamond:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="style.css" />
+    <!-- Leaflet map styles -->
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
+
+<!-- Your website styles -->
+<link rel="stylesheet" href="style.css" />
+
+<!-- Leaflet map library -->
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  defer
+></script>
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+/>
+
+<script
+  src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"
+  defer
+></script>
     <script src="https://cdn.jsdelivr.net/npm/globe.gl"></script>
     <script src="script.js" defer></script>
   </head>
@@ -41,7 +63,59 @@
           <button class="reset-view" id="reset-view" type="button" aria-label="Reset globe view">↻ <span>RESET VIEW</span></button>
           <div class="genre-legend" aria-label="Music genre colors"><span><i class="legend-pop"></i>Pop</span><span><i class="legend-rock"></i>Rock</span><span><i class="legend-electronic"></i>Electronic</span><span><i class="legend-indie"></i>Indie</span></div>
         </section>
+<!-- Country map view, shown after selecting a country -->
+<section
+  id="country-view"
+  class="country-view"
+  aria-labelledby="country-title"
+  hidden
+>
+  <header class="country-view-header">
+    <button
+      id="back-to-globe"
+      class="back-to-globe"
+      type="button"
+    >
+      ← Back to globe
+    </button>
 
+    <div class="country-heading">
+      <p class="eyebrow">EXPLORE THE LOCAL SCENE</p>
+
+      <h2 id="country-title">Country</h2>
+
+      <p id="country-summary" aria-live="polite">
+        Choose a country to explore its shows.
+      </p>
+    </div>
+  </header>
+
+  <div class="country-view-layout">
+    <div class="country-map-container">
+      <div
+        id="country-map"
+        aria-label="Interactive map of concert venues"
+      ></div>
+
+      <p class="country-map-hint">
+        Select a marker to explore shows at that venue.
+      </p>
+    </div>
+
+    <aside
+      class="country-results"
+      aria-labelledby="country-results-title"
+    >
+      <h3 id="country-results-title">Upcoming shows</h3>
+
+      <p class="country-results-note">
+        Select a show to see its poster and details.
+      </p>
+
+      <div id="country-show-list"></div>
+    </aside>
+  </div>
+</section>
         <section class="below-fold" aria-label="How to explore">
           <span>01 / ROTATE</span><p>Move across the globe and discover where music is happening.</p>
           <span>02 / OPEN A LIGHT</span><p>Choose a show to step into that artist’s visual world.</p>

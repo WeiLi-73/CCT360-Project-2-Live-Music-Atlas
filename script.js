@@ -49,6 +49,7 @@ let audioContext;
 let loading = false;
 let lastUpdated = null;
 let previousFocus = null;
+let detailReturnLocation = null;
 
 // Small helpers
 
@@ -147,8 +148,8 @@ const globe = new Globe(globeElement)
   )
   .backgroundImageUrl(null)
   .showAtmosphere(true)
-  .atmosphereColor("#c49a52")
-  .atmosphereAltitude(0.16)
+  .atmosphereColor("#a18acb")
+.atmosphereAltitude(0.10)
   .pointsData([])
   .pointLat("lat")
   .pointLng("lng")
@@ -210,11 +211,14 @@ globe.onGlobeReady(() => {
 
   if (!material) return;
 
-  material.color?.set("#c9a45e");
-  material.specular?.set("#6f552d");
+  // A light lavender tint preserves the night-map details.
+  material.color?.set("#d6d0e6");
+
+  // Reduce the warm metallic reflection.
+  material.specular?.set("#252033");
 
   if ("shininess" in material) {
-    material.shininess = 14;
+    material.shininess = 6;
   }
 
   material.needsUpdate = true;
@@ -817,6 +821,12 @@ function openShow(show) {
   previousFocus = document.activeElement;
 
   fillPanel(show);
+  // Show the return button only when arriving from a venue list.
+document.getElementById("back-to-venue-shows").hidden =
+  !detailReturnLocation;
+
+// Start each event at the top of its details.
+artistPanel.scrollTop = 0;
 
   artistPanel.classList.add("open");
   artistPanel.setAttribute("aria-hidden", "false");
@@ -832,7 +842,11 @@ function openShow(show) {
     altitude: 1.7
   }, 800);
 
-  document.getElementById("panel-close")?.focus();
+  document.getElementById("panel-close")?.focus({
+  preventScroll: true
+});
+
+artistPanel.scrollTop = 0;
 }
 
 function closeShow() {
@@ -853,7 +867,12 @@ function closeShow() {
     defaultTheme.rgb
   );
 
-  previousFocus?.focus();
+  // Restore keyboard focus without moving the page.
+if (previousFocus?.isConnected) {
+  previousFocus.focus({ preventScroll: true });
+}
+
+detailReturnLocation = null;
 }
 
 // ====================
@@ -1215,9 +1234,15 @@ function openLocationPicker(point) {
       card.append(content, arrow);
 
       card.addEventListener("click", () => {
-        locationDialog.close();
-        openShow(show);
-      });
+  // Remember which venue list we came from.
+  detailReturnLocation = {
+    point,
+    scrollTop: locationDialog.scrollTop
+  };
+
+  locationDialog.close();
+  openShow(show);
+});
 
       list.append(card);
     });
@@ -1320,3 +1345,776 @@ setText(
     ? document.getElementById("updated-label").textContent
     : "LOADING EVENT LOCATIONS"
 );
+// ====================
+// Globe → country map navigation
+// ====================
+
+(() => {
+  const countryView = document.getElementById("country-view");
+  const countryMapElement = document.getElementById("country-map");
+  const countryList = document.getElementById("country-show-list");
+  const backButton = document.getElementById("back-to-globe");
+
+  if (!countryView || !countryMapElement || !countryList) {
+    console.error("Country map HTML is missing.");
+    return;
+  }
+
+  if (typeof L === "undefined") {
+    console.error("Leaflet did not load. Check the script in index.html.");
+    return;
+  }
+
+  const countryNames = new Intl.DisplayNames(["en"], {
+    type: "region"
+  });
+
+  let activeCountry = null;
+  let savedGlobeView = null;
+  let flatMap = null;
+  let markerLayer = null;
+  let countryPoints = [];
+
+  function countryName(code) {
+    try {
+      return countryNames.of(code) || code;
+    } catch {
+      return code || "Unknown country";
+    }
+  }
+
+  // Country selector is an alternative to rotating the globe.
+
+  const chooser = document.createElement("div");
+  chooser.className = "country-chooser";
+
+  const chooserLabel = document.createElement("label");
+  chooserLabel.htmlFor = "country-chooser";
+  chooserLabel.textContent = "EXPLORE A COUNTRY";
+
+  const countrySelect = document.createElement("select");
+  countrySelect.id = "country-chooser";
+
+  chooser.append(chooserLabel, countrySelect);
+  document.querySelector(".intro")?.append(chooser);
+
+  // Move the existing filters into the country view.
+  // Placeholder comments remember their original positions.
+
+  const movableFilters = [
+    document.querySelector(".search-row"),
+    document.getElementById("date-filter")?.closest(".date-filter-row"),
+    document.querySelector(".date-filter-note")
+  ].filter(Boolean);
+
+  const filterHomes = movableFilters.map(element => {
+    const placeholder = document.createComment("Filter original position");
+    element.before(placeholder);
+
+    return { element, placeholder };
+  });
+
+  const countryFilters = document.createElement("div");
+  countryFilters.className = "country-filter-toolbar";
+
+  countryView.querySelector(".country-view-header")
+    .after(countryFilters);
+
+  function moveFiltersToCountry() {
+    filterHomes.forEach(({ element }) => {
+      countryFilters.append(element);
+    });
+  }
+
+  function restoreFilters() {
+    filterHomes.forEach(({ element, placeholder }) => {
+      placeholder.after(element);
+    });
+  }
+
+  function getCountries() {
+    const groups = new Map();
+
+    getVisibleShows().forEach(show => {
+      const code = show.country;
+
+      if (!/^[A-Z]{2}$/.test(code)) return;
+
+      if (!groups.has(code)) {
+        groups.set(code, []);
+      }
+
+      groups.get(code).push(show);
+    });
+
+    return [...groups.entries()]
+      .map(([code, events]) => ({
+        code,
+        name: countryName(code),
+        events,
+
+        // Country entry is anchored at a real event location.
+        lat: events[0].lat,
+        lng: events[0].lng,
+
+        genre: events[0].genre
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function refreshCountrySelect() {
+    countrySelect.replaceChildren();
+
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = countryPoints.length
+      ? "Choose a country"
+      : "No matching countries";
+
+    countrySelect.append(placeholder);
+
+    countryPoints.forEach(country => {
+      const option = document.createElement("option");
+
+      option.value = country.code;
+      option.textContent =
+        `${country.name} · ${country.events.length} shows`;
+
+      countrySelect.append(option);
+    });
+  }
+
+  function countryTooltip(country) {
+    return `
+      <div style="padding:12px;line-height:1.7;">
+        <strong>${escapeHtml(country.name)}</strong><br>
+        ${country.events.length} loaded shows<br>
+        Click to open the venue map
+      </div>
+    `;
+  }
+
+  function countryHover(country) {
+  globeElement.style.cursor = country ? "pointer" : "grab";
+
+  globe
+    .ringColor(() => "#e8c789")
+    .ringsData(country ? [country] : []);
+}
+
+  // Replace the previous event-cluster globe interactions.
+
+  globe
+    .pointColor(() => "#e8c789")
+    .pointRadius(country =>
+      Math.min(1.2, 0.6 + Math.sqrt(country.events.length) * 0.1)
+    )
+    .pointAltitude(0.015)
+    .pointLabel(countryTooltip)
+    .labelText(country =>
+      `${country.name} · ${country.events.length}`
+    )
+    .labelSize(1.7)
+    .labelColor(() => "#ffffff")
+.labelAltitude(0.035)
+.labelIncludeDot(true)
+.labelDotRadius(0.2)
+.labelDotOrientation("bottom")
+.labelResolution(4)
+    .labelLabel(countryTooltip)
+    .onPointHover(countryHover)
+    .onLabelHover(countryHover)
+    .onPointClick(country => openCountry(country.code))
+    .onLabelClick(country => openCountry(country.code));
+
+  // Reconnect the existing search and category listeners.
+
+  const previousUpdateGlobe = updateGlobe;
+
+  searchInput.removeEventListener("input", previousUpdateGlobe);
+  genreFilter.removeEventListener("change", previousUpdateGlobe);
+
+  updateGlobe = function () {
+    countryPoints = getCountries();
+
+    refreshCountrySelect();
+
+    globe
+      .pointsData(countryPoints)
+      .labelsData(countryPoints)
+      .ringsData([]);
+
+    setText(
+      "event-count",
+      String(getVisibleShows().length).padStart(2, "0")
+    );
+
+    if (lastUpdated) {
+      const time = new Intl.DateTimeFormat("en", {
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(lastUpdated);
+
+      setText(
+        "updated-label",
+        countryPoints.length
+          ? `${countryPoints.length} COUNTRIES · UPDATED ${time}`
+          : "NO MATCHING SHOWS"
+      );
+    }
+
+    if (activeCountry) {
+      renderCountry(false);
+    }
+  };
+
+  searchInput.addEventListener("input", updateGlobe);
+  genreFilter.addEventListener("change", updateGlobe);
+
+  function initialiseFlatMap() {
+    if (flatMap) return;
+
+    flatMap = L.map(countryMapElement, {
+      scrollWheelZoom: false
+    });
+
+    L.tileLayer(
+      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      {
+        maxZoom: 19,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">' +
+          "OpenStreetMap contributors</a>"
+      }
+    ).addTo(flatMap);
+
+    markerLayer = L.markerClusterGroup({
+  maxClusterRadius: 60,
+  showCoverageOnHover: false,
+  zoomToBoundsOnClick: true,
+  spiderfyOnMaxZoom: true,
+  spiderfyDistanceMultiplier: 1.8,
+
+  spiderLegPolylineOptions: {
+    color: "#9265bd",
+    weight: 1.5,
+    opacity: 0.8
+    
+  },
+
+  iconCreateFunction(cluster) {
+    // Count events, rather than just venue markers.
+    const showCount = cluster.getAllChildMarkers().reduce(
+      (total, marker) => total + (marker.options.showCount || 1),
+      0
+    );
+
+    return L.divIcon({
+      className: "concert-cluster",
+      html: `<span>${showCount}</span>`,
+      iconSize: [44, 44],
+      iconAnchor: [22, 22]
+    });
+  }
+}).addTo(flatMap);
+  // Map navigation controls
+
+const mapNavigation = L.control({
+  position: "topright"
+});
+
+const viewHistory = [];
+let restoringView = false;
+let historyCountry = activeCountry;
+let previousViewButton;
+
+function updatePreviousButton() {
+  if (previousViewButton) {
+    previousViewButton.disabled = viewHistory.length < 2;
+  }
+}
+
+flatMap.on("moveend", () => {
+  if (restoringView) return;
+
+  if (historyCountry !== activeCountry) {
+    viewHistory.length = 0;
+    historyCountry = activeCountry;
+  }
+
+  const center = flatMap.getCenter();
+
+  const currentView = {
+    lat: center.lat,
+    lng: center.lng,
+    zoom: flatMap.getZoom()
+  };
+
+  const previous = viewHistory[viewHistory.length - 1];
+
+  const unchanged =
+    previous &&
+    Math.abs(previous.lat - currentView.lat) < 0.00001 &&
+    Math.abs(previous.lng - currentView.lng) < 0.00001 &&
+    previous.zoom === currentView.zoom;
+
+  if (!unchanged) {
+    viewHistory.push(currentView);
+
+    if (viewHistory.length > 30) {
+      viewHistory.shift();
+    }
+  }
+
+  updatePreviousButton();
+});
+
+mapNavigation.onAdd = function () {
+  const container = L.DomUtil.create(
+    "div",
+    "map-navigation"
+  );
+
+  L.DomEvent.disableClickPropagation(container);
+  L.DomEvent.disableScrollPropagation(container);
+
+  function addButton(text, action) {
+    const button = document.createElement("button");
+
+    button.type = "button";
+    button.textContent = text;
+
+    button.addEventListener("click", action);
+
+    container.append(button);
+
+    return button;
+  }
+
+  previousViewButton = addButton(
+    "← Previous view",
+    () => {
+      if (viewHistory.length < 2) return;
+
+      flatMap.stop();
+
+      viewHistory.pop();
+
+      const previous = viewHistory[viewHistory.length - 1];
+
+      restoringView = true;
+
+      flatMap.setView(
+        [previous.lat, previous.lng],
+        previous.zoom,
+        { animate: false }
+      );
+
+      restoringView = false;
+
+      updatePreviousButton();
+      playClickSound();
+    }
+  );
+
+  addButton("Show all venues", () => {
+    const countryEvents = getVisibleShows().filter(
+      show => show.country === activeCountry
+    );
+
+    if (!countryEvents.length) return;
+
+    flatMap.fitBounds(
+      countryEvents.map(show => [show.lat, show.lng]),
+      {
+        padding: [45, 45],
+        maxZoom: 12,
+        animate: false
+      }
+    );
+
+    playClickSound();
+  });
+
+  addButton("Back to globe", () => {
+    backButton.click();
+  });
+
+  updatePreviousButton();
+
+  return container;
+};
+
+// Create the navigation and place it above the map.
+const navigationToolbar = mapNavigation.onAdd(flatMap);
+
+navigationToolbar.classList.add("map-toolbar");
+navigationToolbar.setAttribute("role", "group");
+navigationToolbar.setAttribute("aria-label", "Map navigation");
+
+countryMapElement.before(navigationToolbar);
+}
+
+  function openCountry(code) {
+    if (!activeCountry) {
+      savedGlobeView = { ...globe.pointOfView() };
+    }
+
+    if (selectedShow) closeShow();
+    if (locationDialog.open) locationDialog.close();
+
+    activeCountry = code;
+
+    document.body.dataset.view = "country";
+    countryView.hidden = false;
+
+    moveFiltersToCountry();
+    initialiseFlatMap();
+    playClickSound();
+
+    requestAnimationFrame(() => {
+      flatMap.invalidateSize();
+      renderCountry(true);
+
+      countryView.scrollIntoView({
+        block: "start",
+        behavior: "smooth"
+      });
+
+      backButton.focus();
+    });
+  }
+
+  function renderCountry(fitMap) {
+    if (!flatMap || !activeCountry) return;
+
+    const events = getVisibleShows().filter(
+      show => show.country === activeCountry
+    );
+
+    setText("country-title", countryName(activeCountry));
+    setText(
+      "country-summary",
+      `${events.length} matching shows in the loaded event data`
+    );
+
+    markerLayer.clearLayers();
+    countryList.replaceChildren();
+
+    if (!events.length) {
+      const empty = document.createElement("p");
+
+      empty.textContent =
+        "No matching shows. Try another date or clear your search.";
+
+      countryList.append(empty);
+      return;
+    }
+
+    // Only group the same venue position in the flat map.
+
+    const venues = new Map();
+
+    events.forEach(show => {
+      const key = `${show.lat.toFixed(5)},${show.lng.toFixed(5)}`;
+
+      if (!venues.has(key)) {
+        venues.set(key, []);
+      }
+
+      venues.get(key).push(show);
+    });
+
+    venues.forEach(venueEvents => {
+      const first = venueEvents[0];
+
+ const venueCount = venueEvents.length;
+
+const marker = L.marker([first.lat, first.lng], {
+  title: `${first.venue} · ${venueCount} shows`,
+  keyboard: true,
+  showCount: venueCount,
+
+  icon: L.divIcon({
+    className: "concert-venue-marker",
+
+    html: `
+      <span style="--venue-color:${getTheme(first).hex}">
+        ${venueCount > 1 ? venueCount : ""}
+      </span>
+    `,
+
+    iconSize: [30, 30],
+    iconAnchor: [15, 15]
+  })
+});
+
+      const tooltip = document.createElement("span");
+
+      tooltip.textContent =
+        `${first.venue} · ${venueEvents.length} show` +
+        (venueEvents.length === 1 ? "" : "s");
+
+      marker.bindTooltip(tooltip);
+
+      marker.on("click", () => {
+        if (venueEvents.length > 1) {
+          openLocationPicker({
+            ...first,
+            events: venueEvents
+          });
+        } else {
+          openShow(first);
+        }
+      });
+
+      marker.addTo(markerLayer);
+    });
+
+    events.forEach(show => {
+      const card = document.createElement("button");
+
+      card.type = "button";
+      card.className = "location-show-card";
+      card.style.setProperty("--show-color", getTheme(show).hex);
+
+      if (show.image) {
+        const image = document.createElement("img");
+
+        image.src = show.image;
+        image.alt = "";
+        image.loading = "lazy";
+
+        card.append(image);
+      }
+
+      const content = document.createElement("span");
+      content.className = "location-show-content";
+
+      const title = document.createElement("strong");
+      title.textContent = show.title;
+
+      const date = document.createElement("span");
+      date.textContent = formatEventDate(show);
+
+      const place = document.createElement("span");
+      place.textContent = `${show.city} · ${show.venue}`;
+
+      content.append(title, date, place);
+      card.append(content);
+
+      card.addEventListener("click", () => {
+        flatMap.setView(
+          [show.lat, show.lng],
+          Math.max(flatMap.getZoom(), 12)
+        );
+
+        openShow(show);
+      });
+
+      countryList.append(card);
+    });
+
+    if (fitMap) {
+      flatMap.fitBounds(
+        events.map(show => [show.lat, show.lng]),
+        {
+          padding: [35, 35],
+          maxZoom: 12
+        }
+      );
+    }
+  }
+
+  backButton.addEventListener("click", () => {
+    if (selectedShow) closeShow();
+    if (locationDialog.open) locationDialog.close();
+
+    activeCountry = null;
+    countryView.hidden = true;
+    document.body.dataset.view = "globe";
+
+    restoreFilters();
+    playClickSound();
+
+    requestAnimationFrame(() => {
+      resizeGlobe();
+
+      if (savedGlobeView) {
+        globe.pointOfView(savedGlobeView, 0);
+      }
+
+      countrySelect.focus();
+    });
+  });
+
+  countrySelect.addEventListener("change", () => {
+    if (countrySelect.value) {
+      openCountry(countrySelect.value);
+    }
+  });
+
+  // Country-map details do not move the hidden globe.
+
+  const previousOpenShow = openShow;
+
+  openShow = function (show) {
+    const view = activeCountry ? { ...globe.pointOfView() } : null;
+
+    previousOpenShow(show);
+
+    if (view) {
+      globe.pointOfView(view, 0);
+    }
+  };
+
+  const instruction = document.querySelector(".micro-note");
+
+  if (instruction) {
+    instruction.textContent =
+      "Rotate the globe or choose a country to explore its shows.";
+  }
+
+  const caption = document.querySelector(".globe-caption");
+
+  if (caption) {
+    caption.textContent = "SELECT A COUNTRY TO EXPLORE";
+  }
+
+  window.addEventListener("resize", () => {
+    if (flatMap && activeCountry) {
+      flatMap.invalidateSize();
+    }
+  });
+
+  updateGlobe();
+})();
+
+// ====================
+// Legends for the two map views
+// ====================
+
+(() => {
+  // Globe legend: country navigation, not event categories.
+
+  const globeLegend = document.querySelector(".genre-legend");
+
+  if (globeLegend) {
+    globeLegend.replaceChildren();
+    globeLegend.setAttribute(
+      "aria-label",
+      "Country marker explanation"
+    );
+
+    const countryKey = document.createElement("span");
+    const countryDot = document.createElement("i");
+
+    countryDot.style.background = "#e8c789";
+    countryDot.style.boxShadow =
+      "0 0 12px rgba(232, 199, 137, 0.5)";
+
+    countryKey.append(
+      countryDot,
+      document.createTextNode("Country")
+    );
+
+    const numberKey = document.createElement("span");
+    numberKey.textContent = "Number = loaded shows";
+
+    globeLegend.append(countryKey, numberKey);
+  }
+
+  // Flat map legend: event categories and clusters.
+
+  const mapContainer = document.querySelector(
+    ".country-map-container"
+  );
+
+  if (!mapContainer || document.getElementById("country-map-legend")) {
+    return;
+  }
+
+  const mapLegend = document.createElement("div");
+
+  mapLegend.id = "country-map-legend";
+  mapLegend.className = "country-map-legend";
+  mapLegend.setAttribute("aria-label", "Event marker colors");
+
+  const heading = document.createElement("strong");
+  heading.textContent = "MAP KEY";
+
+  const items = document.createElement("div");
+  items.className = "country-map-legend-items";
+
+  Object.entries(eventThemes).forEach(([name, theme]) => {
+    const item = document.createElement("span");
+    const dot = document.createElement("i");
+
+    dot.style.background = theme.hex;
+
+    item.append(dot, document.createTextNode(name));
+    items.append(item);
+  });
+
+  const clusterItem = document.createElement("span");
+  const clusterSymbol = document.createElement("b");
+
+  clusterSymbol.className = "legend-cluster-symbol";
+  clusterSymbol.textContent = "3";
+
+  clusterItem.append(
+    clusterSymbol,
+    document.createTextNode("Grouped shows")
+  );
+
+  items.append(clusterItem);
+
+  const note = document.createElement("p");
+
+  note.textContent =
+    "Numbers show event totals. Click a group to zoom in. " +
+    "A venue with several shows may contain different event types.";
+
+  mapLegend.append(heading, items, note);
+
+  const hint = mapContainer.querySelector(".country-map-hint");
+
+  if (hint) {
+    hint.before(mapLegend);
+
+    hint.textContent =
+      "Click a venue to view its shows. Use + and − to zoom.";
+  } else {
+    mapContainer.append(mapLegend);
+  }
+})();
+// Return from event details to the venue's show list.
+
+const backToVenueShows = document.createElement("button");
+
+backToVenueShows.id = "back-to-venue-shows";
+backToVenueShows.className = "back-to-venue-shows";
+backToVenueShows.type = "button";
+backToVenueShows.textContent = "← Back to venue shows";
+backToVenueShows.hidden = true;
+
+const eventTicketLink = document.getElementById("ticket-link");
+
+if (eventTicketLink) {
+  eventTicketLink.before(backToVenueShows);
+} else {
+  artistPanel.append(backToVenueShows);
+}
+
+backToVenueShows.addEventListener("click", () => {
+  const returnLocation = detailReturnLocation;
+
+  if (!returnLocation) return;
+
+  closeShow();
+  openLocationPicker(returnLocation.point);
+
+  requestAnimationFrame(() => {
+    locationDialog.scrollTop = returnLocation.scrollTop;
+  });
+});

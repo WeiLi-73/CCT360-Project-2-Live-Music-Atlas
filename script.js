@@ -2118,3 +2118,49 @@ backToVenueShows.addEventListener("click", () => {
     locationDialog.scrollTop = returnLocation.scrollTop;
   });
 });
+{
+  const music = document.getElementById("background-music");
+  const button = document.getElementById("music-toggle");
+  const label = button?.querySelector("span:last-child");
+
+  if (music && button && label) {
+    music.volume = 0.18;
+
+    music.addEventListener("playing", () => {
+      label.textContent = "Pause music";
+    });
+
+    music.addEventListener("pause", () => {
+      label.textContent = "Play music";
+    });
+
+    // If autoplay is blocked, try once after the first click.
+    function startOnFirstClick(event) {
+      if (!button.contains(event.target) && music.paused) {
+        music.play().catch(() => {});
+      }
+    }
+
+    button.addEventListener("click", async () => {
+      document.removeEventListener("click", startOnFirstClick);
+
+      if (!music.paused) {
+        music.pause();
+        return;
+      }
+
+      try {
+        await music.play();
+      } catch (error) {
+        label.textContent = "Retry music";
+        console.error("Could not play Backbay Lounge:", error);
+      }
+    });
+
+    music.play().catch(error => {
+      if (error.name === "NotAllowedError") {
+        document.addEventListener("click", startOnFirstClick, { once: true });
+      }
+    });
+  }
+}

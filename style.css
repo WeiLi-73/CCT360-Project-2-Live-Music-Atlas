@@ -2337,3 +2337,17 @@ body[data-view="country"] .below-fold {
   opacity: 0.4;
   cursor: default;
 }
+.footer {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.footer .music-credit {
+  flex: 0 0 100%;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.footer .music-credit a {
+  color: inherit;
+}
